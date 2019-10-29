@@ -26,6 +26,8 @@ class ValidationSpec extends FlatSpec with Matchers with BeforeAndAfterAll {
       |    }
       |""".stripMargin)
 
+    case class User(name: String, age: Int, email: Option[String], isAlive: Boolean)
+
   it should "Validating and transforming data" in {
     import jto.validation.playjson.Rules._
     val age: Rule[JsValue, Int] = (Path \ "user" \ "age").from[JsValue](min(0) |+| max(130))
@@ -34,7 +36,6 @@ class ValidationSpec extends FlatSpec with Matchers with BeforeAndAfterAll {
 
   it should "Combining Rules" in {
     import jto.validation.playjson.Rules._
-    case class User(name: String, age: Int, email: Option[String], isAlive: Boolean)
     val userRule: Rule[JsValue, User] = From[JsValue]{ __ =>
       ( (__ \ "name").read[String] ~
         (__ \ "age").read[Int] ~
@@ -61,4 +62,29 @@ class ValidationSpec extends FlatSpec with Matchers with BeforeAndAfterAll {
     productAsPrice.writes(Product("Laptop", 900.99d)) shouldBe "900,99 €"
     }
 
+  it should "Combining Writes with primitive types" in {
+    import jto.validation.playjson.Writes._
+    val serializeFriend = (Path \ "user" \ "friend").write[JsValue, JsObject]
+    serializeFriend.writes(JsString("titi")) should be ( JsObject(Map("user" -> JsObject(Map("friend" -> JsString("titi"))))) )
+  }
+
+  it should "Combining Writes with Type coercion" in {
+    import jto.validation.playjson.Writes._
+    val serializeFriend: Write[Int, JsObject] = (Path \ "user" \ "age").write[Int, JsObject]
+    serializeFriend.writes(30) should be ( JsObject(Map("user" -> JsObject(Map("age" -> JsNumber(30))))) )
+  }
+
+  it should "Combining Writes with proper types" in {
+    val userWrite: Write[User, JsObject] = To[JsObject] { __ =>
+      import jto.validation.playjson.Writes._
+      import scala.Function.unlift
+      (
+        (__ \ "name").write[String] ~
+        (__ \ "age").write[Int] ~
+        (__ \ "email").write[Option[String]] ~
+        (__ \ "isAlive").write[Boolean]
+      )(unlift(User.unapply))
+    }
+    userWrite.writes(User("toto", 30, Some("toto@email.com"), true)) shouldBe ( JsObject(Map("name" -> JsString("toto"), "age" -> JsNumber(30), "email" -> JsString("toto@email.com"), "isAlive" -> JsBoolean(true) )) )
+  }
 }
